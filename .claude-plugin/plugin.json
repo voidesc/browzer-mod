@@ -1,0 +1,51 @@
+{
+  "name": "browzer",
+  "version": "0.1.0",
+  "description": "The artifacts Claude publishes open in browzer, a Chromium page in a kitty split beside the session; /browzer opens any page there",
+  "author": {
+    "name": "Aleksey"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "show": {
+      "title": "What to show",
+      "type": "string",
+      "description": "page: the published artifact at claude.ai (sign in once, in browzer); file: the HTML file Claude wrote, from disk",
+      "options": [
+        "page",
+        "file"
+      ],
+      "default": "page"
+    },
+    "onPublish": {
+      "title": "Open on publish",
+      "type": "boolean",
+      "description": "Show each artifact as Claude publishes it; off, only /browzer opens pages",
+      "default": true
+    },
+    "layout": {
+      "title": "Where it opens",
+      "type": "string",
+      "description": "When no browzer is running yet: a kitty split beside this window (vsplit, hsplit), a new kitty tab, or a new OS window",
+      "options": [
+        "vsplit",
+        "hsplit",
+        "tab",
+        "window"
+      ],
+      "default": "vsplit"
+    },
+    "focus": {
+      "title": "Take the keyboard",
+      "type": "boolean",
+      "description": "Move the focus to browzer when it opens; off, it stays with Claude",
+      "default": false
+    },
+    "browzer": {
+      "title": "browzer command",
+      "type": "string",
+      "description": "The browzer to run, when it is not the one on PATH",
+      "default": ""
+    }
+  }
+}

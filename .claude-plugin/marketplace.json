@@ -1,0 +1,13 @@
+{
+  "name": "browzer",
+  "owner": {
+    "name": "Aleksey"
+  },
+  "description": "browzer: the artifacts Claude publishes, shown in a Chromium page beside the session",
+  "plugins": [
+    {
+      "name": "browzer",
+      "source": "./"
+    }
+  ]
+}
