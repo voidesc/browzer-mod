@@ -1,3 +1,4 @@
+import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
 import { launchArgv, publishedUrl, running, samePage, tabShowing } from '../hooks/lib'
@@ -9,8 +10,11 @@ const SPLIT = ['kitty', '@', 'launch', '--type=window', '--location=vsplit', '--
 type Run = { exitCode: number; stdout: string; stderr: string; isStdoutTruncated: boolean; isStderrTruncated: boolean }
 const ok = (stdout = ''): Run => ({ exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
 
+/** A command as typed at the prompt, for the test's engine `$`. */
+const typed = (command: string, args: string) => ({ command, args, origin: { kind: 'composer' } as const, presentation: { isFullscreen: false, columns: 120 } })
+
 /** A desktop with kitty and browzer: what `ls` answers is the test's to set; every argv run is kept. */
-function desktop(on: Parameters<Parameters<typeof test>[1]>[1], it: { ls?: () => string; kitty?: boolean; call?: Parameters<typeof on>[1] } = {}) {
+function desktop(on: On, it: { ls?: () => string; kitty?: boolean; refuses?: string } = {}) {
   const runs: string[][] = []
   const toasts: string[] = []
   mock.env(on, it.kitty === false ? {} : { KITTY_WINDOW_ID: '7' })
@@ -27,7 +31,7 @@ function desktop(on: Parameters<Parameters<typeof test>[1]>[1], it: { ls?: () =>
   })
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('session.start', ($, e) => e)
-  on('tool.call', it.call ?? (() => ({ result: { url: PAGE, version: '3', title: 'Plan' } })))
+  on('tool.call', ($, e) => (e.tool === 'Artifact' && it.refuses !== undefined && e.file_path === it.refuses ? { deny: 'refused' } : { result: { url: PAGE, version: '3', title: 'Plan' } }))
 
   return { runs, toasts }
 }
@@ -79,7 +83,7 @@ test('a published artifact opens a split when no browzer runs, and /browzer show
   expect(runs).toEqual([LS, [...SPLIT, PAGE]])
   expect(toasts).toEqual([`browzer opened in a split: ${PAGE}`])
 
-  const again = await $.command.run({ command: 'browzer', args: '' })
+  const again = await $.command.run(typed('browzer', ''))
   expect(again.text).toBe(`browzer opened in a split: ${PAGE}`)
   expect(runs.at(-1)).toEqual([...SPLIT, PAGE])
 })
@@ -100,7 +104,7 @@ test('a running browzer takes a new tab; a republish reloads the tab it has', as
 test('/browzer URL opens that page; an open of an existing artifact shows it too', async ($, on) => {
   const { runs } = desktop(on, { ls: () => JSON.stringify([{ ok: true, pid: 9, tabs: [] }]) })
 
-  const said = await $.command.run({ command: 'browzer', args: ' localhost:3000 ' })
+  const said = await $.command.run(typed('browzer', ' localhost:3000 '))
   expect(said.text).toBe('opened in browzer: localhost:3000')
   expect(runs.at(-1)).toEqual(['browzer', 'ctl', '--instance', '9', 'open', '--new-tab', 'localhost:3000'])
 
@@ -109,9 +113,7 @@ test('/browzer URL opens that page; an open of an existing artifact shows it too
 })
 
 test('other Artifact calls, a refused publish and a failed one are left alone', async ($, on) => {
-  const { runs } = desktop(on, {
-    call: ($, e) => (e.tool === 'Artifact' && e.file_path === '/w/no.html' ? { deny: 'refused' } : { result: { url: PAGE, version: '1' } }),
-  })
+  const { runs } = desktop(on, { refuses: '/w/no.html' })
 
   await $.tool.call({ tool: 'Artifact', action: 'list' })
   await $.tool.call({ tool: 'Artifact', file_path: '/w/no.html' })
@@ -121,7 +123,7 @@ test('other Artifact calls, a refused publish and a failed one are left alone', 
 
 test('a bare /browzer with nothing published opens an empty browzer; outside kitty it says so', async ($, on) => {
   const { runs } = desktop(on)
-  const empty = await $.command.run({ command: 'browzer', args: '' })
+  const empty = await $.command.run(typed('browzer', ''))
   expect(empty.text).toBe('browzer opened in a split')
   expect(runs).toEqual([SPLIT])
 })
@@ -147,7 +149,7 @@ test('options: onPublish off leaves publishes alone but remembers them; layout a
 
   await $.tool.call({ tool: 'Artifact', file_path: 'plan.html' })
   expect(runs).toEqual([])
-  const said = await $.command.run({ command: 'browzer', args: '' })
+  const said = await $.command.run(typed('browzer', ''))
   expect(said.text).toBe(`browzer opened in a new tab: ${PAGE}`)
   expect(runs).toEqual([['/opt/browzer', 'ctl', '--json', 'ls'], ['kitty', '@', 'launch', '--type=tab', '--keep-focus', '/opt/browzer', PAGE]])
 })

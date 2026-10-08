@@ -84,8 +84,9 @@ async function show($: $, cfg: Config, target: string): Promise<string> {
 
       return ran.exitCode === 0 ? 'reloaded in browzer' : `browzer: ${said(ran) || `reload exited ${ran.exitCode}`}`
     }
-    if (up.length > 0) {
-      const ran = await $.process.run([cfg.browzer, 'ctl', '--instance', String(up[0].pid), 'open', '--new-tab', target], { timeoutMs: 60_000 })
+    const first = up[0]
+    if (first) {
+      const ran = await $.process.run([cfg.browzer, 'ctl', '--instance', String(first.pid), 'open', '--new-tab', target], { timeoutMs: 60_000 })
 
       return ran.exitCode === 0 ? `opened in browzer: ${target}` : `browzer: ${said(ran) || `open exited ${ran.exitCode}`}`
     }
