@@ -1,4 +1,4 @@
-import type { On } from 'claude-code'
+import type { On, RenderElement } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
 import { launchArgv, publishedUrl, running, samePage, tabShowing } from '../hooks/lib'
@@ -31,9 +31,16 @@ function desktop(on: On, it: { ls?: () => string; kitty?: boolean; refuses?: str
   })
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('session.start', ($, e) => e)
+  const store = new Map<string, unknown>()
+  on('store.get', ($, e) => ({ value: store.get(e.key) }))
+  on('store.set', ($, e) => {
+    store.set(e.key, e.value)
+
+    return { value: undefined }
+  })
   on('tool.call', ($, e) => (e.tool === 'Artifact' && it.refuses !== undefined && e.file_path === it.refuses ? { deny: 'refused' } : { result: { url: PAGE, version: '3', title: 'Plan' } }))
 
-  return { runs, toasts }
+  return { runs, toasts, store }
 }
 
 test('lib: a publish names its page, other calls do not', () => {
@@ -145,6 +152,9 @@ test('options: onPublish off leaves publishes alone but remembers them; layout a
   })
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('session.start', ($, e) => e)
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
   on('tool.call', () => ({ result: { url: PAGE, version: '1' } }))
 
   await $.tool.call({ tool: 'Artifact', file_path: 'plan.html' })
@@ -161,3 +171,78 @@ test('option show=file: the HTML file Claude wrote, made absolute', { options: {
   await $.tool.call({ tool: 'Artifact', file_path: 'plan.html' })
   expect(runs.at(-1)).toEqual([...SPLIT, '/home/me/scratch/plan.html'])
 })
+
+test('/browzer auto turns the automatic opening off and on, and the store keeps it', async ($, on) => {
+  const { runs, store } = desktop(on)
+
+  const off = await $.command.run(typed('browzer', 'auto off'))
+  expect(off.text).toContain('wait')
+  await $.tool.call({ tool: 'Artifact', file_path: 'plan.html' })
+  expect(runs).toEqual([])
+  expect(store.get('auto')).toBe(false)
+
+  const back = await $.command.run(typed('browzer', 'auto'))
+  expect(back.text).toContain('by themselves')
+  expect(store.get('auto')).toBe(true)
+  await $.tool.call({ tool: 'Artifact', file_path: 'plan.html' })
+  expect(runs).toEqual([LS, [...SPLIT, PAGE]])
+
+  const again = await $.command.run(typed('browzer', ''))
+  expect(again.text).toBe(`browzer opened in a split: ${PAGE}`)
+})
+
+test('a stored auto off is read when the session starts', async ($, on) => {
+  const { runs, store } = desktop(on)
+  store.set('auto', false)
+  await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Artifact', file_path: 'plan.html' })
+  expect(runs).toEqual([])
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`the band appears once a page was shown, opens it again and flips auto on ${surface}`, async ($, on) => {
+    const runs: string[][] = []
+    const toasts: string[] = []
+    mock.env(on, { KITTY_WINDOW_ID: '7' })
+    on('process.run', ($, e) => {
+      runs.push([...e.argv])
+
+      return { value: ok('[]') }
+    })
+    on('ui.toast', ($, e) => {
+      toasts.push(e.text)
+
+      return { value: undefined }
+    })
+    on('store.get', () => ({ value: undefined }))
+    on('store.set', () => ({ value: undefined }))
+    on('tool.call', () => ({ result: { url: PAGE, version: '1' } }))
+    on('ui.render', ($, e) => {
+      const { Text } = $.ui.resolve(e)
+
+      return h(Text, {}, 'the engine drew this') as RenderElement
+    })
+    const band = {
+      plugin: 'browzer',
+      surface,
+      component: 'AbovePrompt',
+      props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100, scroll: { offset: 0, bodyRows: 10 }, view: {} },
+    } as const
+
+    const quiet = await $.ui.mount(band)
+    expect(await quiet.find({ type: 'Button' })).toBeUndefined()
+    expect(await quiet.find({ type: 'Text', text: 'the engine drew this' })).toBeDefined()
+    await quiet.unmount()
+
+    await $.tool.call({ tool: 'Artifact', file_path: 'plan.html' })
+    runs.length = 0
+    const ui = await $.ui.mount(band)
+    expect(await ui.find({ type: 'Button', text: 'open' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', text: 'auto on' })).toBeDefined()
+    await ui.press({ key: 'open' })
+    expect(runs).toEqual([LS, [...SPLIT, PAGE]])
+    expect(toasts.at(-1)).toBe(`browzer opened in a split: ${PAGE}`)
+    await ui.press({ key: 'auto' })
+    expect(await ui.find({ type: 'Button', text: 'auto off' })).toBeDefined()
+  })
+}

@@ -20,8 +20,14 @@
     "onPublish": {
       "title": "Open on publish",
       "type": "boolean",
-      "description": "Show each artifact as Claude publishes it; off, only /browzer opens pages",
+      "description": "Show each artifact as Claude publishes it, until /browzer auto or the band's button says otherwise",
       "default": true
+    },
+    "action": {
+      "title": "Open-key action",
+      "type": "string",
+      "description": "An engine keybinding action whose chord presses the band's open button (bind one to it in keybindings.json); empty for none",
+      "default": "app:cycleDiffBase"
     },
     "layout": {
       "title": "Where it opens",

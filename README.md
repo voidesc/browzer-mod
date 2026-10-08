@@ -20,11 +20,31 @@ terminal session:
 
 Answer `y` to add the marketplace, then pick the user scope.
 
+Comes with automatic two-step authentication with Gmail!* 
+
+<sub>* It does not. You sign in to claude.ai once, in browzer, like in any browser; the profile keeps it.</sub>
+
+## Use
+
+Publish, and the page is there. Once something was shown, a one-row band above
+the prompt has `o: open` (the last artifact again) and `a: auto on|off`
+(whether the next publishes open by themselves; the setting is kept across
+sessions). The letters work while the band has the focus (`ctrl+x tab`); or
+`/browzer` and `/browzer auto [on|off]` at the prompt.
+
+For a key that opens the last artifact from the prompt, bind a chord to the
+engine action the band's open button listens on (`app:cycleDiffBase` by
+default, free at the prompt) in `~/.claude/keybindings.json`:
+
+```json
+{ "bindings": [{ "context": "Chat", "bindings": { "ctrl+x o": "app:cycleDiffBase" } }] }
+```
+
 ## Options
 
 In `/config` under browzer: **What to show**, `page` (the artifact at claude.ai;
 sign in once, browzer keeps a profile of its own) or `file` (the HTML file
-Claude wrote); **Open on publish**; **Where it opens** when no browzer runs yet
+Claude wrote); **Open on publish** (the starting value of `auto`); **Open-key action**, the engine action whose chord presses the band's open button; **Where it opens** when no browzer runs yet
 (`vsplit`, `hsplit`, a kitty `tab`, an OS `window`); **Take the keyboard** (off:
 the focus stays with Claude); **browzer command** when it is not the one on
 `PATH`.
