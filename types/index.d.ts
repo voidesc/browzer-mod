@@ -1,5 +1,5 @@
 declare module 'claude-code' {
   interface PluginState {
-    browzer: { last: string; auto: boolean | null }
+    browzer: { last: string; auto: boolean | null; sent: boolean }
   }
 }

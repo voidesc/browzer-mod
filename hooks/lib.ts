@@ -73,3 +73,35 @@ export function launchArgv(opts: { layout: Layout; focus: boolean; windowId: str
 
   return argv
 }
+
+/** Where a split for a new browzer comes from: this kitty window; devkit's `dev browse` (a tmux pane of
+ *  its devenv window, which never carries KITTY_WINDOW_ID: `dev browse` finds the kitty window); none. */
+export type Place = 'kitty' | 'devenv' | 'none'
+
+export function placeOf(env: { KITTY_WINDOW_ID?: string; TMUX?: string; DEVENV_SOCK?: string }): Place {
+  if (env.KITTY_WINDOW_ID) return 'kitty'
+  if (env.TMUX && env.DEVENV_SOCK) return 'devenv'
+
+  return 'none'
+}
+
+/** `dev browse` for a browzer beside the devenv window, `target` as its first page. */
+export function devBrowseArgv(opts: { focus: boolean; target?: string }): string[] {
+  const argv = ['dev', 'browse']
+  if (!opts.focus) argv.push('-k')
+  if (opts.target) argv.push(opts.target)
+
+  return argv
+}
+
+/** Whether a run failed because the command is not there at all (a machine with no browzer). */
+export function isMissing(error: unknown): boolean {
+  const said = error instanceof Error ? `${String((error as { code?: unknown }).code ?? '')} ${error.message}` : String(error)
+
+  return /ENOENT|not found/i.test(said)
+}
+
+/** A page another machine can open: a web address, not a file or a host of this one. */
+export function travels(target: string): boolean {
+  return /^https?:\/\//i.test(target)
+}

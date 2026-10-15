@@ -9,10 +9,14 @@
 // again; also the chord bound to the engine action named by option `action`, so a line in
 // keybindings.json makes it a key) and `a: auto on|off`.
 // browzer itself: https://github.com/voidesc/browzer (the `browzer` command on PATH, or option `browzer`).
+// Where the session runs: in a kitty window, the split opens beside it; in a tmux pane of devkit's
+// devenv window (TMUX and DEVENV_SOCK, no KITTY_WINDOW_ID) `dev browse -k` opens it, beside the kitty
+// window that shows the pane; on a machine with no browzer at all (a remote box), a web address goes
+// to $BROWSER or xdg-open, whose job there is to hand it to the desktop, and the band says so.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { launchArgv, openedUrl, publishedUrl, running, tabShowing } from './lib'
+import { devBrowseArgv, isMissing, launchArgv, openedUrl, placeOf, publishedUrl, running, tabShowing, travels } from './lib'
 import type { Layout } from './lib'
 
 type $ = EngineInterface
@@ -26,6 +30,8 @@ type Config = { browzer: string; layout: Layout; focus: boolean; action: string 
 const last = atom({ plugin: 'browzer', key: 'last' } as const, '')
 /** Whether a publish opens by itself: `/browzer auto` flips it and the store keeps it; null = the option. */
 const auto = atom({ plugin: 'browzer', key: 'auto' } as const, null)
+/** Whether the last page went to the desktop (no browzer on this machine): the band says so. */
+const sent = atom({ plugin: 'browzer', key: 'sent' } as const, false)
 
 export const register: Register = (on, options) => {
   const showFile = options.show === 'file'
@@ -88,6 +94,7 @@ export const register: Register = (on, options) => {
     const page = await read($, last)
     if (e.props.hasSurvey || !page) return next(e)
     const isAuto = (await read($, auto)) ?? onPublish
+    const away = await read($, sent)
     const { Box, Button, Text } = $.ui.resolve(e)
 
     return (
@@ -100,6 +107,7 @@ export const register: Register = (on, options) => {
         <Button key="auto" hotkey="a" plain onPress={() => setAuto($, !isAuto)}>
           {isAuto ? 'auto on' : 'auto off'}
         </Button>
+        {away ? <Text dimColor> · sent to the desktop</Text> : null}
       </Box>
     )
   })
@@ -125,8 +133,11 @@ async function show($: $, cfg: Config, target: string): Promise<string> {
     const ls = await $.process.run([cfg.browzer, 'ctl', '--json', 'ls'], { timeoutMs: 10_000 })
     up = running(ls.stdout)
   } catch (error) {
+    if (isMissing(error)) return toDesktop($, cfg, target)
+
     return `browzer: ${cfg.browzer} did not run (${reason(error)})`
   }
+  await update($, sent, () => false)
   const hit = tabShowing(up, target)
   try {
     if (hit) {
@@ -147,9 +158,38 @@ async function show($: $, cfg: Config, target: string): Promise<string> {
   return launch($, cfg, target)
 }
 
+/** No browzer on this machine (a remote box): a web address goes to $BROWSER or xdg-open, which on a
+ *  box set up for it hands the page to the desktop (devkit's xdg-open stashes it and notifies there). */
+async function toDesktop($: $, cfg: Config, target: string): Promise<string> {
+  if (!travels(target)) return `browzer: no ${cfg.browzer} on this machine, and ${target} is no web address another one could open`
+  const opener = ((await $.env.get('BROWSER')) ?? '').split(':')[0]?.trim() || 'xdg-open'
+  try {
+    const ran = await $.process.run([opener, target], { timeoutMs: 15_000 })
+    if (ran.exitCode !== 0) return `browzer: no ${cfg.browzer} here, and ${opener} failed: ${said(ran) || `exit ${ran.exitCode}`}`
+  } catch (error) {
+    return `browzer: no ${cfg.browzer} here, and ${opener} did not run (${reason(error)})`
+  }
+  await update($, sent, () => true)
+
+  return `sent to the desktop: ${target} (no browzer here; ${opener} has it)`
+}
+
 /** A browzer of its own beside this window, `target` as its first page (none: an empty one). */
 async function launch($: $, cfg: Config, target?: string): Promise<string> {
   const windowId = await $.env.get('KITTY_WINDOW_ID')
+  const place = placeOf({ KITTY_WINDOW_ID: windowId, TMUX: await $.env.get('TMUX'), DEVENV_SOCK: await $.env.get('DEVENV_SOCK') })
+  if (place === 'devenv') {
+    // a tmux pane: `dev browse` finds the kitty window that shows it and splits there
+    try {
+      const ran = await $.process.run(devBrowseArgv({ focus: cfg.focus, target }), { timeoutMs: 20_000 })
+
+      return ran.exitCode === 0
+        ? `browzer opened beside the devenv window${target ? `: ${target}` : ''}`
+        : `browzer: dev browse failed: ${said(ran) || `exit ${ran.exitCode}`}`
+    } catch (error) {
+      return `browzer: dev browse did not run (${reason(error)})`
+    }
+  }
   if (!windowId) return 'browzer: this session is not in a kitty window; start `browzer` in a terminal and the pages go there'
   const where = cfg.layout === 'tab' ? 'in a new tab' : cfg.layout === 'window' ? 'in a new window' : 'in a split'
   try {

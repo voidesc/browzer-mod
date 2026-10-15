@@ -1,7 +1,7 @@
 import type { On, RenderElement } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-import { launchArgv, publishedUrl, running, samePage, tabShowing } from '../hooks/lib'
+import { devBrowseArgv, isMissing, launchArgv, placeOf, publishedUrl, running, samePage, tabShowing, travels } from '../hooks/lib'
 
 const PAGE = 'https://claude.ai/artifact/abc123'
 const LS = ['browzer', 'ctl', '--json', 'ls']
@@ -140,6 +140,89 @@ test('outside kitty, with no browzer running, the mod says what to do', async ($
   await $.tool.call({ tool: 'Artifact', file_path: 'plan.html' })
   expect(runs).toEqual([LS])
   expect(toasts[0]).toContain('not in a kitty window')
+})
+
+test('lib: where a split comes from, the dev browse line, a missing command, a page that travels', () => {
+  expect(placeOf({ KITTY_WINDOW_ID: '7', TMUX: '/tmp/t,1,0', DEVENV_SOCK: 'unix:@k' })).toBe('kitty')
+  expect(placeOf({ TMUX: '/tmp/t,1,0', DEVENV_SOCK: 'unix:@k' })).toBe('devenv')
+  expect(placeOf({ TMUX: '/tmp/t,1,0' })).toBe('none')
+  expect(placeOf({})).toBe('none')
+  expect(devBrowseArgv({ focus: false, target: PAGE })).toEqual(['dev', 'browse', '-k', PAGE])
+  expect(devBrowseArgv({ focus: true })).toEqual(['dev', 'browse'])
+  expect(isMissing(new Error('ENOENT: Executable not found in $PATH: "browzer"'))).toBe(true)
+  expect(isMissing(new Error('timed out after 10000 ms'))).toBe(false)
+  expect(travels(PAGE)).toBe(true)
+  expect(travels('/home/me/plan.html')).toBe(false)
+  expect(travels('localhost:3000')).toBe(false)
+})
+
+/** A machine of the test's making: its environment, and whether browzer is there (no: a remote box). */
+function machine(on: On, env: Record<string, string>, it: { browzer?: boolean } = {}) {
+  const runs: string[][] = []
+  const toasts: string[] = []
+  mock.env(on, env)
+  on('process.run', ($, e) => {
+    runs.push([...e.argv])
+    if (e.argv[0] === 'browzer' && it.browzer === false) return { deny: 'ENOENT: Executable not found in $PATH: "browzer"' }
+
+    return { value: ok(e.argv.join(' ') === LS.join(' ') ? '[]' : '') }
+  })
+  on('ui.toast', ($, e) => {
+    toasts.push(e.text)
+
+    return { value: undefined }
+  })
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('tool.call', () => ({ result: { url: PAGE, version: '1' } }))
+
+  return { runs, toasts }
+}
+
+test('in a tmux pane of the devenv window, dev browse opens the split', async ($, on) => {
+  const { runs, toasts } = machine(on, { TMUX: '/tmp/tmux-1000/devtasks,1,0', DEVENV_SOCK: 'unix:@mykitty-1' })
+
+  await $.tool.call({ tool: 'Artifact', file_path: 'plan.html' })
+  expect(runs).toEqual([LS, ['dev', 'browse', '-k', PAGE]])
+  expect(toasts).toEqual([`browzer opened beside the devenv window: ${PAGE}`])
+})
+
+test('a plain tmux pane with no devenv: the mod says what to do, as outside kitty', async ($, on) => {
+  const { runs, toasts } = machine(on, { TMUX: '/tmp/tmux-1000/default,1,0' })
+
+  await $.tool.call({ tool: 'Artifact', file_path: 'plan.html' })
+  expect(runs).toEqual([LS])
+  expect(toasts[0]).toContain('not in a kitty window')
+})
+
+test('on a box with no browzer, the page goes to $BROWSER and the band says it went to the desktop', async ($, on) => {
+  const { runs, toasts } = machine(on, { KITTY_WINDOW_ID: '3', BROWSER: '/home/me/.local/bin/xdg-open' }, { browzer: false })
+
+  await $.tool.call({ tool: 'Artifact', file_path: 'plan.html' })
+  expect(runs).toEqual([LS, ['/home/me/.local/bin/xdg-open', PAGE]])
+  expect(toasts).toEqual([`sent to the desktop: ${PAGE} (no browzer here; /home/me/.local/bin/xdg-open has it)`])
+
+  const ui = await $.ui.mount({
+    plugin: 'browzer',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100, scroll: { offset: 0, bodyRows: 10 }, view: {} },
+  })
+  expect(await ui.find({ type: 'Text', text: ' · sent to the desktop' })).toBeDefined()
+})
+
+test('on a box with no browzer and no $BROWSER, xdg-open; a file or a bare host does not travel', async ($, on) => {
+  const { runs } = machine(on, {}, { browzer: false })
+
+  const said = await $.command.run(typed('browzer', PAGE))
+  expect(said.text).toContain('sent to the desktop')
+  expect(runs.at(-1)).toEqual(['xdg-open', PAGE])
+
+  const file = await $.command.run(typed('browzer', '/home/me/plan.html'))
+  expect(file.text).toContain('no web address')
+  const host = await $.command.run(typed('browzer', 'localhost:3000'))
+  expect(host.text).toContain('no web address')
+  expect(runs.filter(r => r[0] === 'xdg-open')).toEqual([['xdg-open', PAGE]])
 })
 
 test('options: onPublish off leaves publishes alone but remembers them; layout and command are used', { options: { onPublish: false, layout: 'tab', browzer: '/opt/browzer' } }, async ($, on) => {

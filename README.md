@@ -40,6 +40,19 @@ default, free at the prompt) in `~/.claude/keybindings.json`:
 { "bindings": [{ "context": "Chat", "bindings": { "ctrl+x o": "app:cycleDiffBase" } }] }
 ```
 
+## Where the session runs
+
+- **A kitty window**: the split opens beside it, as above.
+- **A tmux pane of a devkit devenv window** (`TMUX` and
+  `DEVENV_SOCK` set, no `KITTY_WINDOW_ID`): `dev browse -k URL` opens the split,
+  beside the kitty window that shows the pane. A running browzer still takes
+  the page as a tab or reloads it, wherever it is.
+- **A machine with no browzer** (a remote box): a web address goes to
+  `$BROWSER`, else `xdg-open`, whose job there is to get it to your desktop
+  (devkit's box `xdg-open` keeps it and sends a notification that opens it in
+  browzer there). The band adds `sent to the desktop`. A file or a bare host
+  of the box stays where it is, with a word why.
+
 ## Options
 
 In `/config` under browzer: **What to show**, `page` (the artifact at claude.ai;
